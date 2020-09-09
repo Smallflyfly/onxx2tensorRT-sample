@@ -21,10 +21,8 @@
     <ClCompile Include="common\logger.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="mian.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
+    <ClCompile Include="C:\TensorRT-7.0.0.11\samples\common\windows\getopt.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

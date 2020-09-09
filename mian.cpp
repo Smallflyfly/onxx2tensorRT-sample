@@ -1,26 +1,31 @@
-#include "logger.h"
-#include "common.h"
-#include <iostream>
 #include "argsParser.h"
-#include "NvInfer.h"
-#include "parserOnnxConfig.h"
 #include "buffers.h"
-#include "mian.h"
+#include "common.h"
+#include "logger.h"
+#include "parserOnnxConfig.h"
+
+#include "NvInfer.h"
+#include <cuda_runtime_api.h>
+
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 
 using namespace std;
-using namespace samplesCommon;
-using namespace nvinfer1;
-using namespace nvonnxparser;
+//using namespace samplesCommon;
+//using namespace nvinfer1;
+//using namespace nvonnxparser;
 
 const string gsampleNmae = "mask_onxx";
 
 class SampleOnxx
 {
 	template <typename T>
-	using SampleUniquePtr = unique_ptr<T, InferDeleter>;
+	using SampleUniquePtr = unique_ptr<T, samplesCommon::InferDeleter>;
 
 public:
-	SampleOnxx(const OnnxSampleParams& params)
+	SampleOnxx(const samplesCommon::OnnxSampleParams& params)
 		: mParams(params)
 		, mEngine(nullptr)
 	{
@@ -32,47 +37,31 @@ public:
 	bool infer();
 
 private:
-	OnnxSampleParams mParams; // parameters for the samples
-	Dims mInputDims; //input dimensions of input to the network
-	Dims mOutputDims; //output dimensions of output to the network
+	samplesCommon::OnnxSampleParams mParams; // parameters for the samples
+	nvinfer1::Dims mInputDims; //input dimensions of input to the network
+	nvinfer1::Dims mOutputDims; //output dimensions of output to the network
 	int mNumber{ 0 };
-	shared_ptr<ICudaEngine> mEngine; // tensorRT engine used to run the network
+
+	shared_ptr<nvinfer1::ICudaEngine> mEngine; // tensorRT engine used to run the network
 
 	// brief Parses an ONNX model for MNIST and creates a TensorRT network
-	bool constructNetwork(SampleUniquePtr<IBuilder>& builder,
-		SampleUniquePtr<INetworkDefinition>& network, SampleUniquePtr<IBuilderConfig>& config,
-		SampleUniquePtr<IParser>& parser);
+	bool constructNetwork(SampleUniquePtr<nvinfer1::IBuilder>& builder,
+		SampleUniquePtr<nvinfer1::INetworkDefinition>& network, SampleUniquePtr<nvinfer1::IBuilderConfig>& config,
+		SampleUniquePtr<nvonnxparser::IParser>& parser);
 
 	// brief Reads the input  and stores the result in a managed buffer
-	bool processInput(const BufferManager& buffers)
-	{
-		const int inputH = mInputDims.d[2];
-		const int inputW = mInputDims.d[3];
-		const int inputC = mInputDims.d[1];
-		srand(unsigned(time(nullptr)));
-		vector<uint8_t> fileData(inputH * inputW);
-		mNumber = rand() % 10;
-		readPGMFile(locateFile(to_string(mNumber) + ".pgm", mParams.dataDirs), fileData.data(), inputH, inputW);
-
-		float* hostDataBuffer = static_cast<float*>(buffers.getHostBuffer(mParams.inputTensorNames[0]));
-		for (int i = 0; i < inputH * inputW; i++)
-		{
-			hostDataBuffer[i] = 1.0 - float(fileData[i] / 255.0);
-		}
-
-		return true;
-	}
+	bool processInput(const samplesCommon::BufferManager& buffers);
 
 	// brief Classifies digits and verify result
-	bool verifyOutput(const BufferManager& buffers);
+	bool verifyOutput(const samplesCommon::BufferManager& buffers);
 
 
 
 };
 
-OnnxSampleParams initializeSampleParams(const Args& args)
+samplesCommon::OnnxSampleParams initializeSampleParams(const samplesCommon::Args& args)
 {
-	OnnxSampleParams params;
+	samplesCommon::OnnxSampleParams params;
 	if (args.dataDirs.empty())
 	{
 		params.dataDirs.push_back("data/mnist/");
@@ -82,9 +71,10 @@ OnnxSampleParams initializeSampleParams(const Args& args)
 	{
 		params.dataDirs = args.dataDirs;
 	}
-	params.onnxFileName = "mnist.onxx";
+	params.onnxFileName = "mnist.onnx";
 	params.inputTensorNames.push_back("Input3");
 	params.batchSize = 1;
+	params.outputTensorNames.push_back("Plus214_Output_0");
 	params.dlaCore = args.useDLACore;
 	params.int8 = args.runInInt8;
 	params.fp16 = args.runInFp16;
@@ -95,10 +85,11 @@ OnnxSampleParams initializeSampleParams(const Args& args)
 int main(int argc, char** argv)
 {
 	//cout << "fang" << endl;
-	Args args;
+	samplesCommon::Args args;
 	bool argsOk = parseArgs(args, argc, argv);
 	auto sampleTest = gLogger.defineTest(gsampleNmae, argc, argv);
 	gLogger.reportTestStart(sampleTest);
+	
 	SampleOnxx sample(initializeSampleParams(args));
 	gLogInfo << "Run it" << endl;
 
@@ -112,30 +103,31 @@ int main(int argc, char** argv)
 	}
 
 	return gLogger.reportPass(sampleTest);
+	//return 0;
 }
 
 bool SampleOnxx::build()
 {
-	auto builder = SampleUniquePtr<IBuilder>(createInferBuilder(gLogger.getTRTLogger()));
+	auto builder = SampleUniquePtr<nvinfer1::IBuilder>(nvinfer1::createInferBuilder(gLogger.getTRTLogger()));
 	if (!builder)
 	{
 		return false;
 	}
 
 	const auto explicitBatch = 1U << static_cast<uint32_t>(NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
-	auto network = SampleUniquePtr<INetworkDefinition>(builder->createNetworkV2(explicitBatch));
+	auto network = SampleUniquePtr<nvinfer1::INetworkDefinition>(builder->createNetworkV2(explicitBatch));
 	if (!network)
 	{
 		return false;
 	}
 
-	auto config = SampleUniquePtr<IBuilderConfig>(builder->createBuilderConfig());
+	auto config = SampleUniquePtr<nvinfer1::IBuilderConfig>(builder->createBuilderConfig());
 	if (!config)
 	{
 		return false;
 	}
 
-	auto parser = SampleUniquePtr<IParser>(createParser(*network, gLogger.getTRTLogger()));
+	auto parser = SampleUniquePtr<nvonnxparser::IParser>(nvonnxparser::createParser(*network, gLogger.getTRTLogger()));
 	if (!parser)
 	{
 		return false;
@@ -147,7 +139,7 @@ bool SampleOnxx::build()
 		return false;
 	}
 
-	mEngine = shared_ptr<ICudaEngine>(builder->buildEngineWithConfig(*network, *config), InferDeleter());
+	mEngine = shared_ptr<nvinfer1::ICudaEngine>(builder->buildEngineWithConfig(*network, *config), samplesCommon::InferDeleter());
 	if (!mEngine)
 	{
 		return false;
@@ -157,17 +149,36 @@ bool SampleOnxx::build()
 	mInputDims = network->getInput(0)->getDimensions();
 	assert(mInputDims.nbDims == 4);
 
-	assert(network->getNbOutputs == 1);
+	assert(network->getNbOutputs() == 1);
 	mOutputDims = network->getOutput(0)->getDimensions();
 	assert(mOutputDims.nbDims == 2);
 	
 	return true;
 }
 
+bool SampleOnxx::processInput(const samplesCommon::BufferManager& buffers)
+{
+	const int inputH = mInputDims.d[2];
+	const int inputW = mInputDims.d[3];
+
+	srand(unsigned(time(nullptr)));
+	vector<uint8_t> fileData(inputH * inputW);
+	mNumber = rand() % 10;
+	readPGMFile(locateFile(to_string(mNumber) + ".pgm", mParams.dataDirs), fileData.data(), inputH, inputW);
+
+	float* hostDataBuffer = static_cast<float*>(buffers.getHostBuffer(mParams.inputTensorNames[0]));
+	for (int i = 0; i < inputH * inputW; i++)
+	{
+		hostDataBuffer[i] = 1.0 - float(fileData[i] / 255.0);
+	}
+
+	return true;
+}
+
 bool SampleOnxx::infer()
 {
-	BufferManager buffers(mEngine, mParams.batchSize);
-	auto context = SampleUniquePtr<IExecutionContext>(mEngine->createExecutionContext());
+	samplesCommon::BufferManager buffers(mEngine, mParams.batchSize);
+	auto context = SampleUniquePtr<nvinfer1::IExecutionContext>(mEngine->createExecutionContext());
 	if (!context)
 	{
 		return false;
@@ -207,7 +218,7 @@ bool SampleOnxx::infer()
 //!
 //! \param builder Pointer to the engine builder
 //!
-bool SampleOnxx::constructNetwork(SampleUniquePtr<IBuilder>& builder, SampleUniquePtr<INetworkDefinition>& network, SampleUniquePtr<IBuilderConfig>& config, SampleUniquePtr<IParser>& parser)
+bool SampleOnxx::constructNetwork(SampleUniquePtr<nvinfer1::IBuilder>& builder, SampleUniquePtr<nvinfer1::INetworkDefinition>& network, SampleUniquePtr<nvinfer1::IBuilderConfig>& config, SampleUniquePtr<nvonnxparser::IParser>& parser)
 {
 	auto parsed = parser->parseFromFile(locateFile(mParams.onnxFileName, mParams.dataDirs).c_str(), static_cast<int>(gLogger.getReportableSeverity()));
 	if (!parsed)
@@ -223,14 +234,14 @@ bool SampleOnxx::constructNetwork(SampleUniquePtr<IBuilder>& builder, SampleUniq
 	if (mParams.int8)
 	{
 		config->setFlag(BuilderFlag::kINT8);
-		setAllTensorScales(network.get(), 127.0f, 127.0f);
+		samplesCommon::setAllTensorScales(network.get(), 127.0f, 127.0f);
 	}
-	enableDLA(builder.get(), config.get(), mParams.dlaCore);
+	samplesCommon::enableDLA(builder.get(), config.get(), mParams.dlaCore);
 
 	return true;
 }
 
-bool SampleOnxx::verifyOutput(const BufferManager& buffers)
+bool SampleOnxx::verifyOutput(const samplesCommon::BufferManager& buffers)
 {
 	const int outputSize = mOutputDims.d[1];
 	float* output = static_cast<float*>(buffers.getHostBuffer(mParams.outputTensorNames[0]));
@@ -253,7 +264,10 @@ bool SampleOnxx::verifyOutput(const BufferManager& buffers)
 		{
 			idx = i;
 		}
+		gLogInfo << " Prob " << i << "  " << std::fixed << std::setw(5) << std::setprecision(4) << output[i] << " "
+			<< "Class " << i << ": " << std::string(int(std::floor(output[i] * 10 + 0.5f)), '*') << std::endl;
 	}
+	gLogInfo << std::endl;
 
 	return idx == mNumber && val >= 0.9f;
 }
