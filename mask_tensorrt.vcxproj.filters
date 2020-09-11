@@ -21,7 +21,7 @@
     <ClCompile Include="common\logger.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="C:\TensorRT-7.0.0.11\samples\common\windows\getopt.c">
+    <ClCompile Include="D:\TensorRT-7.0.0.11\samples\common\windows\getopt.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

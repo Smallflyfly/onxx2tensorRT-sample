@@ -17,7 +17,7 @@ using namespace std;
 //using namespace nvinfer1;
 //using namespace nvonnxparser;
 
-const string gsampleNmae = "mask_onxx";
+const string gsampleNmae = "mask_onnx";
 
 class SampleOnxx
 {
@@ -64,17 +64,21 @@ samplesCommon::OnnxSampleParams initializeSampleParams(const samplesCommon::Args
 	samplesCommon::OnnxSampleParams params;
 	if (args.dataDirs.empty())
 	{
-		params.dataDirs.push_back("data/mnist/");
-		params.dataDirs.push_back("data/samples/mnist/");
+	/*	params.dataDirs.push_back("data/mnist/");
+		params.dataDirs.push_back("data/samples/mnist/");*/
+		params.dataDirs.push_back("data/mask/");
 	}
 	else
 	{
 		params.dataDirs = args.dataDirs;
 	}
-	params.onnxFileName = "mnist.onnx";
-	params.inputTensorNames.push_back("Input3");
+	//params.onnxFileName = "mnist.onnx";
+	params.onnxFileName = "masksim.onnx";
+	//params.inputTensorNames.push_back("Input3");
+	params.inputTensorNames.push_back("input");
 	params.batchSize = 1;
-	params.outputTensorNames.push_back("Plus214_Output_0");
+	//params.outputTensorNames.push_back("Plus214_Output_0");
+	params.outputTensorNames.push_back("output");
 	params.dlaCore = args.useDLACore;
 	params.int8 = args.runInInt8;
 	params.fp16 = args.runInFp16;
@@ -164,7 +168,7 @@ bool SampleOnxx::processInput(const samplesCommon::BufferManager& buffers)
 	srand(unsigned(time(nullptr)));
 	vector<uint8_t> fileData(inputH * inputW);
 	mNumber = rand() % 10;
-	readPGMFile(locateFile(to_string(mNumber) + ".pgm", mParams.dataDirs), fileData.data(), inputH, inputW);
+	//readPGMFile(locateFile(to_string(mNumber) + ".pgm", mParams.dataDirs), fileData.data(), inputH, inputW);
 
 	float* hostDataBuffer = static_cast<float*>(buffers.getHostBuffer(mParams.inputTensorNames[0]));
 	for (int i = 0; i < inputH * inputW; i++)
@@ -226,7 +230,7 @@ bool SampleOnxx::constructNetwork(SampleUniquePtr<nvinfer1::IBuilder>& builder, 
 		return false;
 	}
 	builder->setMaxBatchSize(mParams.batchSize);
-	config->setMaxWorkspaceSize(16_MiB);
+	config->setMaxWorkspaceSize(1000_MiB);
 	if (mParams.fp16)
 	{
 		config->setFlag(BuilderFlag::kFP16);
